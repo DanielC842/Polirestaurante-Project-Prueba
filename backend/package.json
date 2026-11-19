@@ -1,0 +1,10 @@
+{
+  "name": "poli-restaurante",
+  "version": "1.0.0",
+  "description": "A web-based system for the digital management of orders at PoliRestaurante, developed as an academic project. The system aims to centralize and optimize the process of taking, preparing, and delivering orders, enabling real-time communication between waitstaff, the kitchen, and management.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
