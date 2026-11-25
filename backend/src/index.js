@@ -5,6 +5,7 @@ import express from 'express';
 import { conectDB, sequelize } from './config/connectionPostgreSQL.js';
 
 import userRoutes from './routes/user.routes.js'
+import tableRoutes from './routes/mesas.routes.js'
 
 const app = express();
 app.use(express.json());
@@ -12,6 +13,7 @@ app.use(express.json());
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.use('/api/users', userRoutes);
+app.use('/api/tables', tableRoutes); 
 
 const PORT = process.env.PORT || 5000;
 
