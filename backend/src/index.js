@@ -7,6 +7,8 @@ import { conectDB, sequelize } from './config/connectionPostgreSQL.js';
 import userRoutes from './routes/user.routes.js'
 import tableRoutes from './routes/mesas.routes.js'
 import waiterRoutes from './routes/meseros.routes.js'
+import cookRoutes from './routes/cocineros.routes.js'
+import adminRoutes from './routes/admin.routes.js'
 
 const app = express();
 app.use(express.json());
@@ -16,6 +18,8 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 app.use('/api/users', userRoutes);
 app.use('/api/tables', tableRoutes); 
 app.use('/api/waiters', waiterRoutes);  
+app.use('/api/cooks', cookRoutes); 
+app.use('/api/admins', adminRoutes);
 
 const PORT = process.env.PORT || 5000;
 
