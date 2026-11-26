@@ -4,22 +4,12 @@ import { DetallePedido } from "../models/orderDetail.model.js";
 import { Producto } from "../models/product.model.js";
 import { EstadoPedido } from "../models/status.model.js";
 import { TransicionEstado } from "../models/transition.model.js";
-import { Administrador } from "../models/admin.model.js";
-import { Cocinero } from "../models/cocineros.model.js";
-import { Mesero } from "../models/mesero.model.js";
 
 const dateFieldByStatus = {
   "EN PREPARACIÓN": "fecha_preparacion",
   "LISTO": "fecha_listo",
   "ENTREGADO": "fecha_entrega",
   "CANCELADO": "fecha_cancelacion",
-};
-
-const dbGetUserRole = async (id_usuario) => {
-  if (await Administrador.findOne({ where: { id_usuario } })) return "ADMINISTRADOR";
-  if (await Cocinero.findOne({ where: { id_usuario } })) return "COCINERO";
-  if (await Mesero.findOne({ where: { id_usuario } })) return "MESERO";
-  return null;
 };
 
 const dbGetOrderById = async (id) => {
@@ -90,12 +80,24 @@ const dbGetOrders = async (filters) => {
   if (filters.id_mesero) where.id_mesero = filters.id_mesero;
   return await Pedido.findAll({
     where,
-    include: [{ model: EstadoPedido }],
+    include: [
+      { model: EstadoPedido },
+      { model: DetallePedido, include: [{ model: Producto }] },
+    ],
     order: [["fecha_creacion", "DESC"]],
   });
 };
 
-const dbChangeOrderStatus = async (id, id_estado_destino, id_usuario) => {
+// Actualiza el pedido solo si sigue en el estado leído. Si otro usuario lo cambió
+// entre la lectura y la escritura, no se afecta ninguna fila y se rechaza (RNF-03, CU-06).
+const updateIfStatusUnchanged = async (pedido, changes) => {
+  const [affected] = await Pedido.update(changes, {
+    where: { id_pedido: pedido.id_pedido, id_estado_actual: pedido.id_estado_actual },
+  });
+  if (affected === 0) throw new Error("ESTADO_CAMBIADO");
+};
+
+const dbChangeOrderStatus = async (id, id_estado_destino, user) => {
   const pedido = await Pedido.findByPk(id);
   if (!pedido) return null;
 
@@ -104,30 +106,32 @@ const dbChangeOrderStatus = async (id, id_estado_destino, id_usuario) => {
     throw new Error("PEDIDO_FINALIZADO");
   }
 
-  const rol = await dbGetUserRole(id_usuario);
-  if (!rol) throw new Error("USUARIO_SIN_ROL");
-
   const transicion = await TransicionEstado.findOne({
     where: {
       id_estado_origen: pedido.id_estado_actual,
       id_estado_destino,
-      rol,
+      rol: user.rol,
     },
   });
   if (!transicion) throw new Error("TRANSICION_NO_PERMITIDA");
 
   const destino = await EstadoPedido.findByPk(id_estado_destino);
+  if (!destino) throw new Error("ESTADO_DESTINO_NO_EXISTE");
   const changes = { id_estado_actual: id_estado_destino };
   const dateField = dateFieldByStatus[destino.nombre];
   if (dateField) changes[dateField] = new Date();
 
-  await pedido.update(changes);
+  await updateIfStatusUnchanged(pedido, changes);
   return await dbGetOrderById(id);
 };
 
-const dbCancelOrder = async (id, motivo_cancelacion) => {
+const dbCancelOrder = async (id, motivo_cancelacion, user) => {
   const pedido = await Pedido.findByPk(id);
   if (!pedido) return null;
+
+  if (user.rol === "MESERO" && pedido.id_mesero !== user.id_perfil) {
+    throw new Error("NO_ES_SU_PEDIDO");
+  }
 
   const actual = await EstadoPedido.findByPk(pedido.id_estado_actual);
   if (!["PENDIENTE", "EN PREPARACIÓN"].includes(actual.nombre)) {
@@ -137,7 +141,7 @@ const dbCancelOrder = async (id, motivo_cancelacion) => {
   const cancelado = await EstadoPedido.findOne({ where: { nombre: "CANCELADO" } });
   if (!cancelado) throw new Error("ESTADO_CANCELADO_NO_EXISTE");
 
-  await pedido.update({
+  await updateIfStatusUnchanged(pedido, {
     id_estado_actual: cancelado.id_estado,
     fecha_cancelacion: new Date(),
     motivo_cancelacion,

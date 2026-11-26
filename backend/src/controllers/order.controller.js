@@ -14,10 +14,22 @@ const businessErrors = {
   ESTADO_INICIAL_NO_EXISTE: "No existe el estado inicial PENDIENTE",
   ESTADO_CANCELADO_NO_EXISTE: "No existe el estado CANCELADO",
   USUARIO_SIN_ROL: "El usuario no es administrador, cocinero ni mesero",
+  ESTADO_DESTINO_NO_EXISTE: "El estado destino no existe",
+  NO_ES_SU_PEDIDO: "Solo puede modificar sus propios pedidos",
 };
+
+// Errores de concurrencia: otro usuario cambió el pedido primero (RNF-03, CU-06)
+const conflictErrors = {
+  ESTADO_CAMBIADO: "El estado del pedido ya cambió, actualice la pantalla",
+};
+
+const TIPOS_SERVICIO = ["mesa", "llevar"];
 
 const handleError = (error, res, defaultMessage) => {
     console.error(error);
+    if (conflictErrors[error.message]) {
+        return res.status(409).json({ mensaje: conflictErrors[error.message] });
+    }
     if (businessErrors[error.message]) {
         return res.status(400).json({ mensaje: businessErrors[error.message] });
     }
@@ -29,10 +41,17 @@ const handleError = (error, res, defaultMessage) => {
 
 const newOrder = async (req, res) => {
     try {
-        const { id_mesero, id_mesa, tipo_servicio, nombre_cliente, observaciones, detalles } = req.body;
+        const { id_mesa, tipo_servicio, nombre_cliente, observaciones, detalles } = req.body;
+
+        // Un mesero siempre crea pedidos a su nombre; el administrador indica el mesero
+        const id_mesero = req.user.rol === "MESERO" ? req.user.id_perfil : req.body.id_mesero;
 
         if (!id_mesero || !tipo_servicio) {
             return res.status(400).json({ mensaje: "id_mesero y tipo_servicio son obligatorios" });
+        }
+
+        if (!TIPOS_SERVICIO.includes(tipo_servicio)) {
+            return res.status(400).json({ mensaje: "tipo_servicio debe ser 'mesa' o 'llevar'" });
         }
 
         if (tipo_servicio === "mesa" && !id_mesa) {
@@ -90,13 +109,14 @@ const getOrderById = async (req, res) => {
 
 const changeOrderStatus = async (req, res) => {
     try {
-        const { id_estado_destino, id_usuario } = req.body;
+        const { id_estado_destino } = req.body;
 
-        if (!id_estado_destino || !id_usuario) {
-            return res.status(400).json({ mensaje: "id_estado_destino e id_usuario son obligatorios" });
+        if (!id_estado_destino) {
+            return res.status(400).json({ mensaje: "id_estado_destino es obligatorio" });
         }
 
-        const data = await dbChangeOrderStatus(req.params.id, id_estado_destino, id_usuario);
+        // El usuario y su rol salen del token, no del body
+        const data = await dbChangeOrderStatus(req.params.id, id_estado_destino, req.user);
 
         if (!data) {
             return res.status(404).json({ mensaje: "Pedido no encontrado" });
@@ -116,7 +136,7 @@ const cancelOrder = async (req, res) => {
             return res.status(400).json({ mensaje: "El motivo de cancelación es obligatorio" });
         }
 
-        const data = await dbCancelOrder(req.params.id, motivo_cancelacion);
+        const data = await dbCancelOrder(req.params.id, motivo_cancelacion, req.user);
 
         if (!data) {
             return res.status(404).json({ mensaje: "Pedido no encontrado" });
