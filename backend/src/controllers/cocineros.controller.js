@@ -5,6 +5,8 @@ import {
     dbUpdateCook,
     dbDeleteCook
 } from "../service/cocineros.service.js";
+import { dbGetUserRole } from "../service/auth.service.js";
+import { isPositiveInt } from "../helpers/validation.helper.js";
 
 const handleError = (res, error, mensaje, fkMensaje) => {
     if (error.name === "SequelizeUniqueConstraintError") {
@@ -26,6 +28,16 @@ const newCook = async (req, res) => {
 
         if (!id_usuario || !turno || !estacion || !fecha_ingreso) {
             return res.status(400).json({ mensaje: "id_usuario, turno, estacion y fecha_ingreso son obligatorios" });
+        }
+
+        if (!isPositiveInt(id_usuario)) {
+            return res.status(400).json({ mensaje: "id_usuario debe ser un número entero positivo" });
+        }
+
+        // Cada persona tiene un solo rol: mesero, cocinero o administrador
+        const rolActual = await dbGetUserRole(id_usuario);
+        if (rolActual) {
+            return res.status(409).json({ mensaje: `Ese usuario ya tiene el rol ${rolActual.rol.toLowerCase()}` });
         }
 
         const data = await dbNewCook({ id_usuario, turno, estacion, fecha_ingreso });

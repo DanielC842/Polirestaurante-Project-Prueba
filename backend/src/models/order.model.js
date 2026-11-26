@@ -36,6 +36,7 @@ export const Pedido = sequelize.define(
     tipo_servicio: {
       type: DataTypes.STRING(30),
       allowNull: false,
+      validate: { isIn: [["mesa", "llevar"]] },
     },
     nombre_cliente: {
       type: DataTypes.STRING(120),

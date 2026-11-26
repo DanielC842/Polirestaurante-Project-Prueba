@@ -4,6 +4,22 @@ import {
   dbUpdateProduct,
   dbSetProductActive,
 } from "../service/product.service.js";
+import { isPositiveInt, isValidPrice, isRequiredText, isOptionalText } from "../helpers/validation.helper.js";
+
+// Valida los campos de producto que vengan en el body. Devuelve un mensaje de error o null.
+const validateProductFields = ({ nombre, descripcion, precio, id_categoria }, creating) => {
+    if (creating || nombre !== undefined) {
+        if (!isRequiredText(nombre, 120)) return "El nombre es obligatorio y debe tener máximo 120 caracteres";
+    }
+    if (creating || precio !== undefined) {
+        if (!isValidPrice(precio)) return "El precio debe ser un número mayor o igual a 0";
+    }
+    if (!isOptionalText(descripcion, 2000)) return "La descripción debe ser texto de máximo 2000 caracteres";
+    if (id_categoria !== undefined && id_categoria !== null && !isPositiveInt(id_categoria)) {
+        return "id_categoria debe ser un número entero positivo";
+    }
+    return null;
+};
 
 const newProduct = async (req, res) => {
     try {
@@ -13,11 +29,10 @@ const newProduct = async (req, res) => {
             return res.status(400).json({ mensaje: "nombre y precio son obligatorios" });
         }
 
-        if (isNaN(precio) || Number(precio) < 0) {
-            return res.status(400).json({ mensaje: "El precio debe ser un número mayor o igual a 0" });
-        }
+        const problema = validateProductFields({ nombre, descripcion, precio, id_categoria }, true);
+        if (problema) return res.status(400).json({ mensaje: problema });
 
-        const data = await dbNewProduct({ nombre, descripcion, precio, id_categoria });
+        const data = await dbNewProduct({ nombre: nombre.trim(), descripcion, precio, id_categoria });
 
         res.status(201).json({ data });
 
@@ -42,11 +57,8 @@ const getProducts = async (req, res) => {
 
 const updateProduct = async (req, res) => {
     try {
-        const { precio } = req.body;
-
-        if (precio !== undefined && (isNaN(precio) || Number(precio) < 0)) {
-            return res.status(400).json({ mensaje: "El precio debe ser un número mayor o igual a 0" });
-        }
+        const problema = validateProductFields(req.body, false);
+        if (problema) return res.status(400).json({ mensaje: problema });
 
         const data = await dbUpdateProduct(req.params.id, req.body);
 

@@ -5,6 +5,7 @@ import {
   dbChangeOrderStatus,
   dbCancelOrder,
 } from "../service/order.service.js";
+import { isPositiveInt, isOptionalText } from "../helpers/validation.helper.js";
 
 const businessErrors = {
   PRODUCTO_NO_DISPONIBLE: "Uno de los productos no existe o no está activo",
@@ -14,10 +15,31 @@ const businessErrors = {
   ESTADO_INICIAL_NO_EXISTE: "No existe el estado inicial PENDIENTE",
   ESTADO_CANCELADO_NO_EXISTE: "No existe el estado CANCELADO",
   USUARIO_SIN_ROL: "El usuario no es administrador, cocinero ni mesero",
+  ESTADO_DESTINO_NO_EXISTE: "El estado destino no existe",
+  NO_ES_SU_PEDIDO: "Solo puede modificar sus propios pedidos",
+  MESA_NO_DISPONIBLE: "La mesa no existe o está fuera de servicio",
 };
+
+// El rol del usuario no tiene permiso para ese cambio (sí lo tiene otro rol)
+const forbiddenErrors = {
+  TRANSICION_DE_OTRO_ROL: "Su rol no tiene permiso para realizar este cambio de estado",
+};
+
+// Errores de concurrencia: otro usuario cambió el pedido primero (RNF-03, CU-06)
+const conflictErrors = {
+  ESTADO_CAMBIADO: "El estado del pedido ya cambió, actualice la pantalla",
+};
+
+const TIPOS_SERVICIO = ["mesa", "llevar"];
 
 const handleError = (error, res, defaultMessage) => {
     console.error(error);
+    if (conflictErrors[error.message]) {
+        return res.status(409).json({ mensaje: conflictErrors[error.message] });
+    }
+    if (forbiddenErrors[error.message]) {
+        return res.status(403).json({ mensaje: forbiddenErrors[error.message] });
+    }
     if (businessErrors[error.message]) {
         return res.status(400).json({ mensaje: businessErrors[error.message] });
     }
@@ -29,14 +51,37 @@ const handleError = (error, res, defaultMessage) => {
 
 const newOrder = async (req, res) => {
     try {
-        const { id_mesero, id_mesa, tipo_servicio, nombre_cliente, observaciones, detalles } = req.body;
+        const { id_mesa, tipo_servicio, nombre_cliente, observaciones, detalles } = req.body;
+
+        // Un mesero siempre crea pedidos a su nombre; el administrador indica el mesero
+        const id_mesero = req.user.rol === "MESERO" ? req.user.id_perfil : req.body.id_mesero;
 
         if (!id_mesero || !tipo_servicio) {
             return res.status(400).json({ mensaje: "id_mesero y tipo_servicio son obligatorios" });
         }
 
+        if (!TIPOS_SERVICIO.includes(tipo_servicio)) {
+            return res.status(400).json({ mensaje: "tipo_servicio debe ser 'mesa' o 'llevar'" });
+        }
+
+        if (!isPositiveInt(id_mesero)) {
+            return res.status(400).json({ mensaje: "id_mesero debe ser un número entero positivo" });
+        }
+
         if (tipo_servicio === "mesa" && !id_mesa) {
             return res.status(400).json({ mensaje: "id_mesa es obligatorio cuando el servicio es en mesa" });
+        }
+
+        if (id_mesa !== undefined && id_mesa !== null && !isPositiveInt(id_mesa)) {
+            return res.status(400).json({ mensaje: "id_mesa debe ser un número entero positivo" });
+        }
+
+        if (!isOptionalText(nombre_cliente, 120)) {
+            return res.status(400).json({ mensaje: "El nombre del cliente debe ser texto de máximo 120 caracteres" });
+        }
+
+        if (!isOptionalText(observaciones, 1000)) {
+            return res.status(400).json({ mensaje: "Las observaciones deben ser texto de máximo 1000 caracteres" });
         }
 
         if (!Array.isArray(detalles) || detalles.length === 0) {
@@ -44,8 +89,11 @@ const newOrder = async (req, res) => {
         }
 
         for (const item of detalles) {
-            if (!item.id_producto || !Number.isInteger(item.cantidad) || item.cantidad <= 0) {
+            if (!item || !isPositiveInt(item.id_producto) || !Number.isInteger(item.cantidad) || item.cantidad <= 0) {
                 return res.status(400).json({ mensaje: "Cada detalle necesita id_producto y una cantidad entera mayor a 0" });
+            }
+            if (!isOptionalText(item.observaciones, 500)) {
+                return res.status(400).json({ mensaje: "Las observaciones de cada producto deben ser texto de máximo 500 caracteres" });
             }
         }
 
@@ -67,6 +115,12 @@ const newOrder = async (req, res) => {
 
 const getOrders = async (req, res) => {
     try {
+        for (const filtro of ["id_estado_actual", "id_mesa", "id_mesero"]) {
+            if (req.query[filtro] !== undefined && !isPositiveInt(req.query[filtro])) {
+                return res.status(400).json({ mensaje: `El filtro ${filtro} debe ser un número entero positivo` });
+            }
+        }
+
         const data = await dbGetOrders(req.query);
         res.status(200).json({ data });
     } catch (error) {
@@ -90,13 +144,18 @@ const getOrderById = async (req, res) => {
 
 const changeOrderStatus = async (req, res) => {
     try {
-        const { id_estado_destino, id_usuario } = req.body;
+        const { id_estado_destino } = req.body;
 
-        if (!id_estado_destino || !id_usuario) {
-            return res.status(400).json({ mensaje: "id_estado_destino e id_usuario son obligatorios" });
+        if (!id_estado_destino) {
+            return res.status(400).json({ mensaje: "id_estado_destino es obligatorio" });
         }
 
-        const data = await dbChangeOrderStatus(req.params.id, id_estado_destino, id_usuario);
+        if (!isPositiveInt(id_estado_destino)) {
+            return res.status(400).json({ mensaje: "id_estado_destino debe ser un número entero positivo" });
+        }
+
+        // El usuario y su rol salen del token, no del body
+        const data = await dbChangeOrderStatus(req.params.id, id_estado_destino, req.user);
 
         if (!data) {
             return res.status(404).json({ mensaje: "Pedido no encontrado" });
@@ -112,11 +171,15 @@ const cancelOrder = async (req, res) => {
     try {
         const { motivo_cancelacion } = req.body;
 
-        if (!motivo_cancelacion) {
+        if (!motivo_cancelacion || typeof motivo_cancelacion !== "string" || !motivo_cancelacion.trim()) {
             return res.status(400).json({ mensaje: "El motivo de cancelación es obligatorio" });
         }
 
-        const data = await dbCancelOrder(req.params.id, motivo_cancelacion);
+        if (motivo_cancelacion.length > 255) {
+            return res.status(400).json({ mensaje: "El motivo de cancelación debe tener máximo 255 caracteres" });
+        }
+
+        const data = await dbCancelOrder(req.params.id, motivo_cancelacion, req.user);
 
         if (!data) {
             return res.status(404).json({ mensaje: "Pedido no encontrado" });

@@ -1,4 +1,5 @@
-import { dbNewCategory, dbGetCategories } from "../service/category.service.js";
+import { dbNewCategory, dbGetCategories, dbFindCategoryByName } from "../service/category.service.js";
+import { isRequiredText, isOptionalText } from "../helpers/validation.helper.js";
 
 const newCategory = async (req, res) => {
     try {
@@ -8,11 +9,24 @@ const newCategory = async (req, res) => {
             return res.status(400).json({ mensaje: "El nombre es obligatorio" });
         }
 
-        const data = await dbNewCategory({ nombre, descripcion });
+        if (!isRequiredText(nombre, 80)) {
+            return res.status(400).json({ mensaje: "El nombre debe ser texto de máximo 80 caracteres" });
+        }
+
+        if (!isOptionalText(descripcion, 2000)) {
+            return res.status(400).json({ mensaje: "La descripción debe ser texto de máximo 2000 caracteres" });
+        }
+
+        if (await dbFindCategoryByName(nombre)) {
+            return res.status(409).json({ mensaje: "Ya existe una categoría con ese nombre" });
+        }
+
+        const data = await dbNewCategory({ nombre: nombre.trim(), descripcion });
 
         res.status(201).json({ data });
     } catch (error) {
         console.error(error);
+        res.status(500).json({ mensaje: "Error al crear la categoría" });
     }
 }
 
