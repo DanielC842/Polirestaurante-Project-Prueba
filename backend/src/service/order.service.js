@@ -80,7 +80,10 @@ const dbGetOrders = async (filters) => {
   if (filters.id_mesero) where.id_mesero = filters.id_mesero;
   return await Pedido.findAll({
     where,
-    include: [{ model: EstadoPedido }],
+    include: [
+      { model: EstadoPedido },
+      { model: DetallePedido, include: [{ model: Producto }] },
+    ],
     order: [["fecha_creacion", "DESC"]],
   });
 };
