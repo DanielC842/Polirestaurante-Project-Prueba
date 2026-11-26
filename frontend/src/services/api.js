@@ -54,6 +54,18 @@ export const api = {
 
   getStatuses: () => request('GET', '/statuses'),
   getTables: () => request('GET', '/tables'),
+  newTable: (data) => request('POST', '/tables', data),
+  updateTable: (id, data) => request('PUT', `/tables/${id}`, data),
+
+  getUsers: () => request('GET', '/users'),
+  newUser: (data) => request('POST', '/users', data),
+  updateUser: (id, data) => request('PUT', `/users/${id}`, data),
+  getWaiters: () => request('GET', '/waiters'),
+  newWaiter: (data) => request('POST', '/waiters', data),
+  getCooks: () => request('GET', '/cooks'),
+  newCook: (data) => request('POST', '/cooks', data),
+  getAdmins: () => request('GET', '/admins'),
+  newAdmin: (data) => request('POST', '/admins', data),
   getCategories: () => request('GET', '/categories'),
   newCategory: (data) => request('POST', '/categories', data),
   getProducts: () => request('GET', '/products'),
